@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1419">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<title>FBA在庫</title>
+<style>
+:root{--bg:#0f1419;--card:#1a2129;--line:#2a343f;--text:#e8edf2;--sub:#8a97a5;--red:#e5484d;--yel:#e8a842;--grn:#2fb457}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;padding:max(16px,env(safe-area-inset-top)) 16px 40px;max-width:560px;margin:0 auto}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+h1{font-size:18px}
+#upd{font-size:12px;color:var(--sub)}
+.hb{display:flex;align-items:center;gap:12px}
+.gear{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:16px}
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
+.tile{background:var(--card);border-radius:14px;padding:12px;text-align:center;border:1px solid var(--line)}
+.tile b{display:block;font-size:28px;line-height:1.1}.tile span{font-size:12px;color:var(--sub)}
+.tile.r b{color:var(--red)}.tile.y b{color:var(--yel)}.tile.g b{color:var(--grn)}
+.tile.on.r{border-color:var(--red)}.tile.on.y{border-color:var(--yel)}.tile.on.g{border-color:var(--grn)}
+.item{background:var(--card);border-radius:14px;padding:14px 14px 14px 18px;margin-bottom:10px;position:relative;overflow:hidden;border:1px solid var(--line)}
+.item::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;background:var(--c)}
+.item.r{--c:var(--red);background:linear-gradient(90deg,#2a1a1d,var(--card) 60%)}
+.item.y{--c:var(--yel)}.item.g{--c:var(--grn)}
+.top{display:flex;justify-content:space-between;align-items:center}
+.name{font-size:15px;font-weight:600}
+.qty b{font-size:28px;color:var(--c);line-height:1}.qty span{font-size:13px;color:var(--sub);margin-left:2px}
+.bar{height:6px;background:var(--line);border-radius:3px;margin:12px 0 8px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--c);border-radius:3px}
+.meta{display:flex;gap:14px;font-size:12px;color:var(--sub);flex-wrap:wrap}.meta b{color:var(--text);font-weight:600}
+.empty{text-align:center;color:var(--sub);padding:30px}
+#note{font-size:11px;color:var(--sub);text-align:center;margin-top:14px}
+/* 設定 */
+#settings{display:none}
+.sc{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px}
+.sc.bad{border-color:var(--red)}
+.sc .top{margin-bottom:6px}
+.badge{font-size:12px;padding:3px 10px;border-radius:10px;color:#fff}
+.row{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+.lab{display:flex;align-items:center;gap:8px;font-size:13px}.dot{width:10px;height:10px;border-radius:50%}
+.step{display:flex;align-items:center;gap:10px}
+.step button{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:#242d37;color:var(--text);font-size:18px}
+.step span{min-width:52px;text-align:center;font-size:16px;font-variant-numeric:tabular-nums}
+.sbar{position:relative;display:flex;height:8px;border-radius:4px;margin-top:14px;background:var(--line)}
+.sbar i{display:block;height:100%}.sbar .m{position:absolute;top:-4px;width:3px;height:16px;background:#fff;border-radius:2px}
+.scale{display:flex;justify-content:space-between;font-size:11px;color:var(--sub);margin-top:5px}
+.err{color:var(--red);font-size:12px;margin-top:8px;display:none}.sc.bad .err{display:block}
+.save{width:100%;height:46px;border-radius:12px;border:0;background:var(--grn);color:#fff;font-size:15px;font-weight:700;margin-top:6px}
+.reset,.back{width:100%;height:40px;border-radius:12px;border:1px solid var(--line);background:none;color:var(--sub);font-size:13px;margin-top:8px}
+</style>
+</head>
+<body>
+<header><h1 id="ttl">FBA在庫</h1><div class="hb"><div id="upd"></div><button class="gear" id="gear" aria-label="設定">⚙</button></div></header>
+
+<div id="main"><div class="sum" id="sum"></div><div id="list"></div><div id="note"></div></div>
+
+<div id="settings">
+  <div style="font-size:12px;color:var(--sub);margin-bottom:12px">在庫数がこの個数以下になると色が変わります（白い線＝現在の在庫）</div>
+  <div id="slist"></div>
+  <button class="save" id="save">保存</button>
+  <button class="reset" id="reset">すべて初期値（警告10個・注意30個）に戻す</button>
+  <button class="back" id="back">一覧に戻る</button>
+  <div id="snote" style="font-size:11px;color:var(--sub);text-align:center;margin-top:10px"></div>
+</div>
+
+<script>
+// ===== 設定 =====
+// Apps ScriptのURL。空なら仮データを表示し、しきい値はこの端末だけに保存
+const DATA_URL = "";
+const DEF = {r:10, y:30};
+
+// 仮データ（stock=在庫、inbound=入庫中、daily=1日の販売数の目安）
+const MOCK = [
+ {name:"SMS-64-GR",stock:3,inbound:0,daily:0.5},
+ {name:"SMS-64-BK",stock:25,inbound:20,daily:0.8},
+ {name:"SMS-74-GR",stock:12,inbound:0,daily:1.4},
+ {name:"SMS-74-BK",stock:48,inbound:0,daily:1.6},
+ {name:"SHK",stock:30,inbound:0,daily:0.9},
+ {name:"BHC",stock:60,inbound:0,daily:0.7}
+];
+
+const LS="fba_thr";
+const getThr=()=>{try{return JSON.parse(localStorage.getItem(LS))||{}}catch(e){return {}}};
+const lvOf=(n,r,y)=>n<=r?"r":n<=y?"y":"g";
+const LAB={r:"警告",y:"注意",g:"十分"};
+const COLV={r:"#e5484d",y:"#e8a842",g:"#2fb457"};
+let filter=null, data=null, edit=[];
+
+async function load(){
+  if(!DATA_URL) return {items:MOCK,mock:true,at:new Date()};
+  try{
+    const j=await (await fetch(DATA_URL,{cache:"no-store"})).json();
+    localStorage.setItem("fba",JSON.stringify(j));
+    return {items:j.items,at:new Date(j.updated||Date.now())};
+  }catch(e){
+    const c=localStorage.getItem("fba");
+    if(c){const j=JSON.parse(c);return {items:j.items,at:new Date(j.updated),stale:true}}
+    return {items:[],at:new Date(),err:true};
+  }
+}
+const withThr=items=>{const t=getThr();return items.map(x=>{
+  const r=t[x.name]?.r??x.r??DEF.r, y=t[x.name]?.y??x.y??DEF.y;
+  return {...x,r,y,lv:lvOf(x.stock,r,y),days:x.daily>0?x.stock/x.daily:null}})};
+
+function render(){
+  const items=withThr(data.items).sort((a,b)=>({r:0,y:1,g:2}[a.lv]-{r:0,y:1,g:2}[b.lv])||a.stock-b.stock);
+  const cnt={r:0,y:0,g:0};items.forEach(x=>cnt[x.lv]++);
+  document.getElementById("sum").innerHTML=["r","y","g"].map(k=>
+    `<div class="tile ${k} ${filter===k?"on":""}" data-k="${k}"><b>${cnt[k]}</b><span>${LAB[k]}</span></div>`).join("");
+  const shown=items.filter(x=>!filter||x.lv===filter);
+  document.getElementById("list").innerHTML=shown.length?shown.map(x=>{
+    const w=Math.min(100,x.stock/Math.max(x.y*2,1)*100);
+    return `<div class="item ${x.lv}" style="--c:${COLV[x.lv]}">
+    <div class="top"><div class="name">${x.name}</div><div class="qty"><b>${x.stock}</b><span>個</span></div></div>
+    <div class="bar"><i style="width:${w}%"></i></div>
+    <div class="meta"><span>状態 <b>${LAB[x.lv]}</b></span><span>入庫中 <b>${x.inbound??0}</b></span><span>残り日数 <b>${x.days===null?"—":"約"+Math.floor(x.days)+"日"}</b></span></div>
+    </div>`}).join(""):`<div class="empty">該当なし</div>`;
+  const t=data.at,p=n=>String(n).padStart(2,"0");
+  document.getElementById("upd").textContent=`${t.getMonth()+1}/${t.getDate()} ${p(t.getHours())}:${p(t.getMinutes())} 更新`;
+  document.getElementById("note").textContent=data.mock?"仮データを表示中":data.stale?"通信できないため前回のデータを表示中":data.err?"データを取得できません":"";
+  document.querySelectorAll(".tile").forEach(e=>e.onclick=()=>{filter=filter===e.dataset.k?null:e.dataset.k;render()});
+}
+
+// ===== 設定画面 =====
+function openSettings(){
+  const t=getThr();
+  edit=data.items.map(x=>({name:x.name,stock:x.stock,r:t[x.name]?.r??x.r??DEF.r,y:t[x.name]?.y??x.y??DEF.y}));
+  drawS();
+  document.getElementById("main").style.display="none";
+  document.getElementById("settings").style.display="block";
+  document.getElementById("ttl").textContent="しきい値の設定";
+  document.getElementById("gear").style.display="none";
+}
+function closeSettings(){
+  document.getElementById("main").style.display="block";
+  document.getElementById("settings").style.display="none";
+  document.getElementById("ttl").textContent="FBA在庫";
+  document.getElementById("gear").style.display="";
+  render();
+}
+function drawS(){
+  document.getElementById("slist").innerHTML=edit.map((s,i)=>{
+    const bad=s.r>=s.y,max=Math.max(100,s.y+20,s.stock+10),lv=lvOf(s.stock,s.r,s.y);
+    return `<div class="sc ${bad?"bad":""}"><div class="top"><div class="name">${s.name}</div><span class="badge" style="background:${COLV[lv]}">${s.stock}個 ${LAB[lv]}</span></div>
+    <div class="row"><div class="lab"><i class="dot" style="background:#e5484d"></i>警告（赤）</div><div class="step"><button data-i="${i}" data-k="r" data-d="-1">−</button><span>${s.r}個</span><button data-i="${i}" data-k="r" data-d="1">＋</button></div></div>
+    <div class="row"><div class="lab"><i class="dot" style="background:#e8a842"></i>注意（橙）</div><div class="step"><button data-i="${i}" data-k="y" data-d="-1">−</button><span>${s.y}個</span><button data-i="${i}" data-k="y" data-d="1">＋</button></div></div>
+    <div class="sbar"><i style="width:${s.r/max*100}%;background:#e5484d;border-radius:4px 0 0 4px"></i><i style="width:${Math.max(0,s.y-s.r)/max*100}%;background:#e8a842"></i><i style="flex:1;background:#2fb457;border-radius:0 4px 4px 0"></i><b class="m" style="left:calc(${s.stock/max*100}% - 1px)"></b></div>
+    <div class="scale"><span>0</span><span>${s.r}個以下</span><span>${s.y}個以下</span><span>${max}個</span></div>
+    <div class="err">警告の個数は、注意より小さくしてください</div></div>`}).join("");
+}
+document.getElementById("slist").onclick=e=>{const b=e.target.closest("button");if(!b)return;
+  const s=edit[b.dataset.i],k=b.dataset.k;s[k]=Math.max(0,Math.min(999,s[k]+ +b.dataset.d));drawS()};
+document.getElementById("reset").onclick=()=>{edit.forEach(s=>{s.r=DEF.r;s.y=DEF.y});drawS()};
+document.getElementById("save").onclick=async()=>{
+  if(edit.some(s=>s.r>=s.y)){document.getElementById("snote").textContent="警告が注意以上の商品があります。直してください";return}
+  const t={};edit.forEach(s=>t[s.name]={r:s.r,y:s.y});
+  localStorage.setItem(LS,JSON.stringify(t));
+  // Apps Script接続後：ここでDATA_URLへ送り、ウィジェットにも反映する
+  closeSettings();
+};
+document.getElementById("gear").onclick=openSettings;
+document.getElementById("back").onclick=closeSettings;
+
+(async()=>{data=await load();render()})();
+document.addEventListener("visibilitychange",async()=>{if(!document.hidden&&document.getElementById("main").style.display!=="none"){data=await load();render()}});
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
