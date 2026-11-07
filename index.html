@@ -23,8 +23,7 @@ h1{font-size:18px}
 .tile.on.r{border-color:var(--red)}.tile.on.y{border-color:var(--yel)}.tile.on.g{border-color:var(--grn)}
 .item{background:var(--card);border-radius:14px;padding:14px 14px 14px 18px;margin-bottom:10px;position:relative;overflow:hidden;border:1px solid var(--line)}
 .item::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;background:var(--c)}
-.item.r{--c:var(--red);background:linear-gradient(90deg,#2a1a1d,var(--card) 60%)}
-.item.y{--c:var(--yel)}.item.g{--c:var(--grn)}
+.item.r{background:linear-gradient(90deg,#2a1a1d,var(--card) 60%)}
 .top{display:flex;justify-content:space-between;align-items:center}
 .name{font-size:15px;font-weight:600}
 .qty b{font-size:28px;color:var(--c);line-height:1}.qty span{font-size:13px;color:var(--sub);margin-left:2px}
@@ -33,22 +32,27 @@ h1{font-size:18px}
 .meta{display:flex;gap:14px;font-size:12px;color:var(--sub);flex-wrap:wrap}.meta b{color:var(--text);font-weight:600}
 .empty{text-align:center;color:var(--sub);padding:30px}
 #note{font-size:11px;color:var(--sub);text-align:center;margin-top:14px}
-/* 設定 */
 #settings{display:none}
+h2{font-size:13px;color:var(--sub);font-weight:600;margin:16px 0 8px}
 .sc{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px}
-.sc.bad{border-color:var(--red)}
-.sc .top{margin-bottom:6px}
+.sc .top{margin-bottom:8px}
 .badge{font-size:12px;padding:3px 10px;border-radius:10px;color:#fff}
-.row{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
-.lab{display:flex;align-items:center;gap:8px;font-size:13px}.dot{width:10px;height:10px;border-radius:50%}
-.step{display:flex;align-items:center;gap:10px}
-.step button{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:#242d37;color:var(--text);font-size:18px}
-.step span{min-width:52px;text-align:center;font-size:16px;font-variant-numeric:tabular-nums}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--bg);border-radius:10px;padding:3px;margin-bottom:4px}
+.seg button{height:34px;border:0;border-radius:8px;background:none;color:var(--sub);font-size:13px}
+.seg button.on{background:#2f6fed;color:#fff;font-weight:600}
+.row{display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:13px}
+.step{display:flex;align-items:center;gap:8px}
+.step button{width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:#242d37;color:var(--text);font-size:17px}
+.step span{min-width:58px;text-align:center;font-size:15px;font-variant-numeric:tabular-nums}
+.res{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:13px}
+.res div{display:flex;justify-content:space-between;margin-top:4px}
+.res small{color:var(--sub);font-size:11px}.res .g{color:var(--sub);font-size:11px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
 .sbar{position:relative;display:flex;height:8px;border-radius:4px;margin-top:14px;background:var(--line)}
-.sbar i{display:block;height:100%}.sbar .m{position:absolute;top:-4px;width:3px;height:16px;background:#fff;border-radius:2px}
-.scale{display:flex;justify-content:space-between;font-size:11px;color:var(--sub);margin-top:5px}
-.err{color:var(--red);font-size:12px;margin-top:8px;display:none}.sc.bad .err{display:block}
-.save{width:100%;height:46px;border-radius:12px;border:0;background:var(--grn);color:#fff;font-size:15px;font-weight:700;margin-top:6px}
+.sbar i{display:block;height:100%}.sbar i:first-child{border-radius:4px 0 0 4px}.sbar i:last-child{border-radius:0 4px 4px 0}
+.sbar .m{position:absolute;top:-4px;width:3px;height:16px;background:#fff;border-radius:2px}
+.formula{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:10px 12px;font-size:12px;line-height:1.8;color:#c9d2db}
+.save{width:100%;height:46px;border-radius:12px;border:0;background:var(--grn);color:#fff;font-size:15px;font-weight:700;margin-top:10px}
 .reset,.back{width:100%;height:40px;border-radius:12px;border:1px solid var(--line);background:none;color:var(--sub);font-size:13px;margin-top:8px}
 </style>
 </head>
@@ -58,36 +62,73 @@ h1{font-size:18px}
 <div id="main"><div class="sum" id="sum"></div><div id="list"></div><div id="note"></div></div>
 
 <div id="settings">
-  <div style="font-size:12px;color:var(--sub);margin-bottom:12px">在庫数がこの個数以下になると色が変わります（白い線＝現在の在庫）</div>
+  <div style="font-size:12px;color:var(--sub);margin-bottom:4px">日数と販売数を入れると、警告・注意の個数が自動で決まります</div>
+  <h2>全商品に共通</h2>
+  <div class="sc" id="common"></div>
+  <h2>商品ごと</h2>
   <div id="slist"></div>
+  <div class="formula">計算のしかた<br>
+  警告（赤）＝ 補充にかかる全日数ぶん<br>
+  　自社商品：印刷 ＋ 梱包 ＋ 家→FBA<br>
+  　セレクト品：業者→家 ＋ 梱包 ＋ 家→FBA<br>
+  注意（橙）＝ 警告 ＋ 対応の余裕日数<br>
+  印刷の日数 ＝ 月間販売数 ÷ 1日に印刷できる数<br>
+  個数 ＝ 日数 × 1日の販売数（月間販売数 ÷ 30、小数は切り上げ）<br><br>
+  橙の間に対応すれば、欠品しません。<br>
+  赤になると、いま対応しても欠品の可能性があります。</div>
   <button class="save" id="save">保存</button>
-  <button class="reset" id="reset">すべて初期値（警告10個・注意30個）に戻す</button>
+  <button class="reset" id="reset">すべて初期値に戻す</button>
   <button class="back" id="back">一覧に戻る</button>
-  <div id="snote" style="font-size:11px;color:var(--sub);text-align:center;margin-top:10px"></div>
 </div>
 
 <script>
 // ===== 設定 =====
-// Apps ScriptのURL。空なら仮データを表示し、しきい値はこの端末だけに保存
+// Apps ScriptのURL。空なら仮データを表示し、設定はこの端末だけに保存
 const DATA_URL = "";
-const DEF = {r:10, y:30};
 
-// 仮データ（stock=在庫、inbound=入庫中、daily=1日の販売数の目安）
+// 初期値
+const DEF_COMMON = {pack:1, ship:3, margin:7};
+const DEF_ITEM = {
+ "SMS-64-GR":{sel:false,perday:6,vendor:5,m:20},
+ "SMS-64-BK":{sel:false,perday:6,vendor:5,m:20},
+ "SMS-74-GR":{sel:false,perday:6,vendor:5,m:20},
+ "SMS-74-BK":{sel:false,perday:6,vendor:5,m:20},
+ "SHK":{sel:false,perday:12,vendor:5,m:10},
+ "BHC":{sel:true,perday:5,vendor:10,m:20}
+};
+const FALLBACK = {sel:false,perday:6,vendor:5,m:20};
+
+// 仮データ（stock=在庫、inbound=入庫中）
 const MOCK = [
- {name:"SMS-64-GR",stock:3,inbound:0,daily:0.5},
- {name:"SMS-64-BK",stock:25,inbound:20,daily:0.8},
- {name:"SMS-74-GR",stock:12,inbound:0,daily:1.4},
- {name:"SMS-74-BK",stock:48,inbound:0,daily:1.6},
- {name:"SHK",stock:30,inbound:0,daily:0.9},
- {name:"BHC",stock:60,inbound:0,daily:0.7}
+ {name:"SMS-64-GR",stock:3,inbound:0},
+ {name:"SMS-64-BK",stock:25,inbound:20},
+ {name:"SMS-74-GR",stock:12,inbound:0},
+ {name:"SMS-74-BK",stock:48,inbound:0},
+ {name:"SHK",stock:30,inbound:0},
+ {name:"BHC",stock:60,inbound:0}
 ];
 
-const LS="fba_thr";
-const getThr=()=>{try{return JSON.parse(localStorage.getItem(LS))||{}}catch(e){return {}}};
-const lvOf=(n,r,y)=>n<=r?"r":n<=y?"y":"g";
-const LAB={r:"警告",y:"注意",g:"十分"};
+const LS="fba_cfg";
 const COLV={r:"#e5484d",y:"#e8a842",g:"#2fb457"};
-let filter=null, data=null, edit=[];
+const LAB={r:"警告",y:"注意",g:"十分"};
+const clone=o=>JSON.parse(JSON.stringify(o));
+function getCfg(){
+  let c={};try{c=JSON.parse(localStorage.getItem(LS))||{}}catch(e){}
+  return {common:{...DEF_COMMON,...(c.common||{})},items:c.items||{}};
+}
+const itemCfg=(cfg,name)=>({...(DEF_ITEM[name]||FALLBACK),...(cfg.items[name]||{})});
+
+// しきい値の計算
+function calc(stock,ic,cm){
+  const d=ic.m/30;
+  const pd=ic.sel?0:Math.ceil(ic.m/ic.perday);
+  const w=(ic.sel?ic.vendor:pd)+cm.pack+cm.ship;   // 警告の日数
+  const yd=w+cm.margin;                              // 注意の日数
+  const r=Math.ceil(d*w), y=Math.ceil(d*yd);
+  return {r,y,w,yd,pd,d,lv:stock<=r?"r":stock<=y?"y":"g"};
+}
+
+let filter=null,data=null,cfg=null,edit=null;
 
 async function load(){
   if(!DATA_URL) return {items:MOCK,mock:true,at:new Date()};
@@ -101,22 +142,23 @@ async function load(){
     return {items:[],at:new Date(),err:true};
   }
 }
-const withThr=items=>{const t=getThr();return items.map(x=>{
-  const r=t[x.name]?.r??x.r??DEF.r, y=t[x.name]?.y??x.y??DEF.y;
-  return {...x,r,y,lv:lvOf(x.stock,r,y),days:x.daily>0?x.stock/x.daily:null}})};
 
 function render(){
-  const items=withThr(data.items).sort((a,b)=>({r:0,y:1,g:2}[a.lv]-{r:0,y:1,g:2}[b.lv])||a.stock-b.stock);
-  const cnt={r:0,y:0,g:0};items.forEach(x=>cnt[x.lv]++);
+  cfg=getCfg();
+  const ord={r:0,y:1,g:2};
+  const items=data.items.map(x=>({...x,c:calc(x.stock,itemCfg(cfg,x.name),cfg.common)}))
+    .sort((a,b)=>ord[a.c.lv]-ord[b.c.lv]||a.stock-b.stock);
+  const cnt={r:0,y:0,g:0};items.forEach(x=>cnt[x.c.lv]++);
   document.getElementById("sum").innerHTML=["r","y","g"].map(k=>
     `<div class="tile ${k} ${filter===k?"on":""}" data-k="${k}"><b>${cnt[k]}</b><span>${LAB[k]}</span></div>`).join("");
-  const shown=items.filter(x=>!filter||x.lv===filter);
+  const shown=items.filter(x=>!filter||x.c.lv===filter);
   document.getElementById("list").innerHTML=shown.length?shown.map(x=>{
-    const w=Math.min(100,x.stock/Math.max(x.y*2,1)*100);
-    return `<div class="item ${x.lv}" style="--c:${COLV[x.lv]}">
+    const c=x.c,w=Math.min(100,x.stock/Math.max(c.y*2,1)*100),days=c.d>0?Math.floor(x.stock/c.d):null;
+    return `<div class="item ${c.lv}" style="--c:${COLV[c.lv]}">
     <div class="top"><div class="name">${x.name}</div><div class="qty"><b>${x.stock}</b><span>個</span></div></div>
     <div class="bar"><i style="width:${w}%"></i></div>
-    <div class="meta"><span>状態 <b>${LAB[x.lv]}</b></span><span>入庫中 <b>${x.inbound??0}</b></span><span>残り日数 <b>${x.days===null?"—":"約"+Math.floor(x.days)+"日"}</b></span></div>
+    <div class="meta"><span>状態 <b>${LAB[c.lv]}</b></span><span>入庫中 <b>${x.inbound??0}</b></span><span>残り日数 <b>${days===null?"—":"約"+days+"日"}</b></span></div>
+    <div class="meta" style="margin-top:4px"><span>警告 <b>${c.r}個以下</b></span><span>注意 <b>${c.y}個以下</b></span></div>
     </div>`}).join(""):`<div class="empty">該当なし</div>`;
   const t=data.at,p=n=>String(n).padStart(2,"0");
   document.getElementById("upd").textContent=`${t.getMonth()+1}/${t.getDate()} ${p(t.getHours())}:${p(t.getMinutes())} 更新`;
@@ -125,9 +167,10 @@ function render(){
 }
 
 // ===== 設定画面 =====
+const stp=(g,k,label,u,d,i,val)=>`<div class="row"><span>${label}</span><div class="step"><button data-g="${g}" data-k="${k}" data-i="${i}" data-d="${-d}">−</button><span>${val}${u}</span><button data-g="${g}" data-k="${k}" data-i="${i}" data-d="${d}">＋</button></div></div>`;
 function openSettings(){
-  const t=getThr();
-  edit=data.items.map(x=>({name:x.name,stock:x.stock,r:t[x.name]?.r??x.r??DEF.r,y:t[x.name]?.y??x.y??DEF.y}));
+  cfg=getCfg();
+  edit={common:{...cfg.common},items:data.items.map(x=>({name:x.name,stock:x.stock,...itemCfg(cfg,x.name)}))};
   drawS();
   document.getElementById("main").style.display="none";
   document.getElementById("settings").style.display="block";
@@ -142,23 +185,38 @@ function closeSettings(){
   render();
 }
 function drawS(){
-  document.getElementById("slist").innerHTML=edit.map((s,i)=>{
-    const bad=s.r>=s.y,max=Math.max(100,s.y+20,s.stock+10),lv=lvOf(s.stock,s.r,s.y);
-    return `<div class="sc ${bad?"bad":""}"><div class="top"><div class="name">${s.name}</div><span class="badge" style="background:${COLV[lv]}">${s.stock}個 ${LAB[lv]}</span></div>
-    <div class="row"><div class="lab"><i class="dot" style="background:#e5484d"></i>警告（赤）</div><div class="step"><button data-i="${i}" data-k="r" data-d="-1">−</button><span>${s.r}個</span><button data-i="${i}" data-k="r" data-d="1">＋</button></div></div>
-    <div class="row"><div class="lab"><i class="dot" style="background:#e8a842"></i>注意（橙）</div><div class="step"><button data-i="${i}" data-k="y" data-d="-1">−</button><span>${s.y}個</span><button data-i="${i}" data-k="y" data-d="1">＋</button></div></div>
-    <div class="sbar"><i style="width:${s.r/max*100}%;background:#e5484d;border-radius:4px 0 0 4px"></i><i style="width:${Math.max(0,s.y-s.r)/max*100}%;background:#e8a842"></i><i style="flex:1;background:#2fb457;border-radius:0 4px 4px 0"></i><b class="m" style="left:calc(${s.stock/max*100}% - 1px)"></b></div>
-    <div class="scale"><span>0</span><span>${s.r}個以下</span><span>${s.y}個以下</span><span>${max}個</span></div>
-    <div class="err">警告の個数は、注意より小さくしてください</div></div>`}).join("");
+  const C=edit.common;
+  document.getElementById("common").innerHTML=
+    stp("c","pack","梱包にかかる日数","日",1,0,C.pack)+
+    stp("c","ship","家→FBA倉庫の日数","日",1,0,C.ship)+
+    stp("c","margin","対応の余裕日数","日",1,0,C.margin);
+  document.getElementById("slist").innerHTML=edit.items.map((x,i)=>{
+    const c=calc(x.stock,x,C),max=Math.max(60,c.y*1.8,x.stock+10);
+    return `<div class="sc"><div class="top"><div class="name">${x.name}</div><span class="badge" style="background:${COLV[c.lv]}">${x.stock}個 ${LAB[c.lv]}</span></div>
+    <div class="seg"><button data-sel="0" data-i="${i}" class="${x.sel?"":"on"}">自社商品</button><button data-sel="1" data-i="${i}" class="${x.sel?"on":""}">セレクト品</button></div>
+    ${x.sel?stp("p","vendor","業者→家の日数","日",1,i,x.vendor):stp("p","perday","1日に印刷できる数","個",1,i,x.perday)}${stp("p","m","月に売れる数","個",5,i,x.m)}
+    <div class="res"><div><span><i class="dot" style="background:#e5484d"></i>警告</span><b>${c.r}個以下 <small>（${c.w}日ぶん）</small></b></div>
+    <div><span><i class="dot" style="background:#e8a842"></i>注意</span><b>${c.y}個以下 <small>（${c.yd}日ぶん）</small></b></div>
+    <div class="g"><span>印刷にかかる日数</span><span>${x.sel?"印刷なし":c.pd+"日"}</span></div></div>
+    <div class="sbar"><i style="width:${c.r/max*100}%;background:#e5484d"></i><i style="width:${(c.y-c.r)/max*100}%;background:#e8a842"></i><i style="flex:1;background:#2fb457"></i><b class="m" style="left:calc(${Math.min(x.stock/max*100,99)}% - 1px)"></b></div></div>`}).join("");
 }
-document.getElementById("slist").onclick=e=>{const b=e.target.closest("button");if(!b)return;
-  const s=edit[b.dataset.i],k=b.dataset.k;s[k]=Math.max(0,Math.min(999,s[k]+ +b.dataset.d));drawS()};
-document.getElementById("reset").onclick=()=>{edit.forEach(s=>{s.r=DEF.r;s.y=DEF.y});drawS()};
-document.getElementById("save").onclick=async()=>{
-  if(edit.some(s=>s.r>=s.y)){document.getElementById("snote").textContent="警告が注意以上の商品があります。直してください";return}
-  const t={};edit.forEach(s=>t[s.name]={r:s.r,y:s.y});
-  localStorage.setItem(LS,JSON.stringify(t));
-  // Apps Script接続後：ここでDATA_URLへ送り、ウィジェットにも反映する
+document.getElementById("settings").onclick=e=>{
+  const s=e.target.closest("button[data-sel]");
+  if(s){edit.items[s.dataset.i].sel=s.dataset.sel==="1";drawS();return}
+  const b=e.target.closest("button[data-d]");if(!b)return;
+  const t=b.dataset.g==="c"?edit.common:edit.items[b.dataset.i],k=b.dataset.k;
+  const min=k==="m"?5:k==="perday"?1:0;
+  t[k]=Math.max(min,Math.min(999,t[k]+ +b.dataset.d));drawS();
+};
+document.getElementById("reset").onclick=()=>{
+  edit.common={...DEF_COMMON};
+  edit.items=edit.items.map(x=>({name:x.name,stock:x.stock,...(DEF_ITEM[x.name]||FALLBACK)}));
+  drawS();
+};
+document.getElementById("save").onclick=()=>{
+  const items={};edit.items.forEach(x=>items[x.name]={sel:x.sel,perday:x.perday,vendor:x.vendor,m:x.m});
+  localStorage.setItem(LS,JSON.stringify({common:edit.common,items}));
+  // Apps Script接続後：ここで計算したしきい値（r,y）を送り、ウィジェットにも反映する
   closeSettings();
 };
 document.getElementById("gear").onclick=openSettings;
