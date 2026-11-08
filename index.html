@@ -55,6 +55,7 @@ input#url{width:100%;height:40px;border-radius:10px;border:1px solid var(--line)
 .imgrow{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .pick{height:34px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:#242d37;color:var(--text);font-size:13px;display:inline-flex;align-items:center}
 .pick.del{color:var(--red)}
+.prod{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--sub);margin-top:9px;padding-top:9px;border-top:1px dashed var(--line)}.prod b{color:var(--text);font-weight:600}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
 .sbar{position:relative;display:flex;height:8px;border-radius:4px;margin-top:14px;background:var(--line)}
 .sbar i{display:block;height:100%}.sbar i:first-child{border-radius:4px 0 0 4px}.sbar i:last-child{border-radius:0 4px 4px 0}
@@ -122,6 +123,14 @@ const MOCK = [
  {name:"SHK",sellable:26,inbound:0,reserved:10},
  {name:"BHC",sellable:10,inbound:12,reserved:1}
 ];
+// 仮データ用の製造在庫（beforeState/afterState：正常・要確認・エラー…）
+const MOCK_PROD = {
+ "SMS-64-GR":{before:12,after:5,beforeState:"正常",afterState:"正常"},
+ "SMS-64-BK":{before:0,after:0,beforeState:"エラー(センサー無応答)",afterState:"エラー(センサー無応答)"},
+ "SMS-74-GR":{before:8,after:0,beforeState:"正常",afterState:"要確認"},
+ "SMS-74-BK":{before:3,after:15,beforeState:"正常",afterState:"正常"},
+ "SHK":{before:20,after:30,beforeState:"正常",afterState:"正常"}
+};
 
 const LS="fba_cfg";
 const COLV={r:"#e5484d",y:"#e8a842",g:"#2fb457"};
@@ -170,13 +179,16 @@ function shrink(file){return new Promise((res,rej)=>{
 
 const getUrl=()=>{try{return localStorage.getItem(LS_URL)||DATA_URL}catch(e){return DATA_URL}};
 // 在庫の数（stock）＝ 販売可能 ＋ 納品中。引当中は含めない（判定・表示ともこの数）
-function norm(items){
+function norm(items,production){
   const arr=Array.isArray(items)?items:Object.keys(items||{}).map(n=>({name:n,...items[n]}));
   return arr.map(x=>{
     const sellable=x.sellable??x.stock??0,inbound=x.inbound??0,reserved=x.reserved??0;
-    return {name:x.name,sellable,inbound,reserved,stock:sellable+inbound};
+    return {name:x.name,sellable,inbound,reserved,stock:sellable+inbound,prod:(production||{})[x.name]||null};
   });
 }
+// 製造在庫の状態の色（正常=緑／要確認=橙／エラー=赤）
+const PCOL=s=>!s?"#8a97a5":s.startsWith("エラー")?"#e5484d":s==="正常"?"#2fb457":"#e8a842";
+const prodRow=p=>p?`<div class="prod"><span>製造在庫</span><span title="${p.beforeState||""}"><i class="dot" style="background:${PCOL(p.beforeState)}"></i>検品前 <b>${p.before}</b></span><span title="${p.afterState||""}"><i class="dot" style="background:${PCOL(p.afterState)}"></i>検品後 <b>${p.after}</b></span></div>`:"";
 
 // 設定をApps Scriptへ送る（警告・注意の個数も計算して一緒に送る）。成功したらtrue
 async function pushCfg(names){
@@ -193,7 +205,7 @@ async function pushCfg(names){
 
 async function load(){
   const url=getUrl();
-  if(!url) return {items:norm(MOCK),mock:true,at:new Date()};
+  if(!url) return {items:norm(MOCK,MOCK_PROD),mock:true,at:new Date()};
   try{
     const j=await (await fetch(url,{cache:"no-store"})).json();
     if(!j.ok) throw new Error((j.error&&j.error.message)||"error");
@@ -206,10 +218,10 @@ async function load(){
     }else if(localStorage.getItem(LS)){
       await pushCfg(names);                                   // 初回：この端末の設定を送る
     }
-    return {items:norm(j.items),at:new Date(j.updated||Date.now())};
+    return {items:norm(j.items,j.production),at:new Date(j.updated||Date.now()),prodErr:j.productionError||null};
   }catch(e){
     const c=localStorage.getItem("fba");
-    if(c){try{const j=JSON.parse(c);return {items:norm(j.items),at:new Date(j.updated),stale:true}}catch(_){}}
+    if(c){try{const j=JSON.parse(c);return {items:norm(j.items,j.production),at:new Date(j.updated),stale:true}}catch(_){}}
     return {items:[],at:new Date(),err:true};
   }
 }
@@ -230,10 +242,11 @@ function render(){
     <div class="bar"><i style="width:${w}%"></i></div>
     <div class="meta"><span>販売可能 <b>${x.sellable}</b></span><span>納品中 <b>${x.inbound}</b></span><span class="dim">引当中 <b>${x.reserved}</b></span></div>
     <div class="meta" style="margin-top:4px"><span>残り日数 <b>${days===null?"—":"約"+days+"日"}</b></span><span>警告 <b>${c.r}個以下</b></span><span>注意 <b>${c.y}個以下</b></span></div>
+    ${prodRow(x.prod)}
     </div>`}).join(""):`<div class="empty">該当なし</div>`;
   const t=data.at,p=n=>String(n).padStart(2,"0");
   document.getElementById("upd").textContent=`${t.getMonth()+1}/${t.getDate()} ${p(t.getHours())}:${p(t.getMinutes())} 更新`;
-  document.getElementById("note").textContent=[data.mock?"仮データを表示中":data.stale?"通信できないため前回のデータを表示中":data.err?"データを取得できません":"",localStorage.getItem(LS_DIRTY)?"設定が未送信です（ウィジェットにまだ反映されていません）":""].filter(Boolean).join(" / ");
+  document.getElementById("note").textContent=[data.mock?"仮データを表示中":data.stale?"通信できないため前回のデータを表示中":data.err?"データを取得できません":"",data.prodErr?"製造在庫を読めません":"",localStorage.getItem(LS_DIRTY)?"設定が未送信です（ウィジェットにまだ反映されていません）":""].filter(Boolean).join(" / ");
   document.querySelectorAll(".tile").forEach(e=>e.onclick=()=>{filter=filter===e.dataset.k?null:e.dataset.k;render()});
 }
 
