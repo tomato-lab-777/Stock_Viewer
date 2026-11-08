@@ -49,6 +49,12 @@ h2{font-size:13px;color:var(--sub);font-weight:600;margin:16px 0 8px}
 .res small{color:var(--sub);font-size:11px}.res .g{color:var(--sub);font-size:11px}
 input#url{width:100%;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:0 10px;font-size:13px}
 .meta .dim,.meta .dim b{color:var(--sub);font-weight:400}
+.nm{display:flex;align-items:center;gap:10px;min-width:0}
+.th{width:44px;height:44px;border-radius:10px;object-fit:cover;border:1px solid var(--line);flex:none}
+.th.ph{display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--sub);background:var(--bg)}
+.imgrow{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.pick{height:34px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:#242d37;color:var(--text);font-size:13px;display:inline-flex;align-items:center}
+.pick.del{color:var(--red)}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
 .sbar{position:relative;display:flex;height:8px;border-radius:4px;margin-top:14px;background:var(--line)}
 .sbar i{display:block;height:100%}.sbar i:first-child{border-radius:4px 0 0 4px}.sbar i:last-child{border-radius:0 4px 4px 0}
@@ -91,7 +97,9 @@ input#url{width:100%;height:40px;border-radius:10px;border:1px solid var(--line)
 // Apps ScriptのURLは合言葉つきのため、公開リポジトリには書かない。
 // 設定画面の「データの接続」に入力すると、この端末だけに保存される。空なら仮データを表示。
 const DATA_URL = "";
-const LS_URL="fba_url",LS_DIRTY="fba_dirty";
+const LS_URL="fba_url",LS_DIRTY="fba_dirty",LS_IMG="fba_imgs";
+// ウィジェットから開いたとき、URLを引き継ぐ（#u=…）。どのブラウザで開いても実データになる
+(function(){try{const h=location.hash;if(h.startsWith("#u=")){const u=decodeURIComponent(h.slice(3));if(/^https:\/\/script\.google\.com\//.test(u))localStorage.setItem(LS_URL,u);history.replaceState(null,"",location.pathname+location.search)}}catch(e){}})();
 
 // 初期値
 const DEF_COMMON = {pack:1, ship:3, margin:7};
@@ -136,6 +144,29 @@ function calc(stock,ic,cm){
 }
 
 let filter=null,data=null,cfg=null,edit=null;
+
+// ===== 商品画像（Googleドライブに保存・共有）=====
+let IMG={};try{IMG=JSON.parse(localStorage.getItem(LS_IMG))||{}}catch(e){}
+const urlParts=()=>{const u=getUrl();if(!u)return null;try{const o=new URL(u);return {base:o.origin+o.pathname,key:o.searchParams.get("key")||""}}catch(e){return null}};
+async function loadImgs(){
+  const p=urlParts();if(!p)return false;
+  try{
+    const j=await (await fetch(p.base+"?key="+encodeURIComponent(p.key)+"&imgs=1",{cache:"no-store"})).json();
+    if(j.ok&&j.images){IMG=j.images;localStorage.setItem(LS_IMG,JSON.stringify(IMG));return true}
+  }catch(e){}
+  return false;
+}
+async function postImg(body){
+  const p=urlParts();if(!p)throw new Error("nourl");
+  const j=await (await fetch(p.base,{method:"POST",body:JSON.stringify({key:p.key,...body})})).json();
+  if(!j.ok)throw new Error((j.error&&j.error.message)||"error");
+}
+// 写真を中央で正方形に切り取り、160pxに縮小
+function shrink(file){return new Promise((res,rej)=>{
+  const im=new Image(),u=URL.createObjectURL(file);
+  im.onload=()=>{const s=Math.min(im.width,im.height),c=document.createElement("canvas");c.width=c.height=160;
+    c.getContext("2d").drawImage(im,(im.width-s)/2,(im.height-s)/2,s,s,0,0,160,160);URL.revokeObjectURL(u);res(c.toDataURL("image/jpeg",0.72))};
+  im.onerror=()=>rej(new Error("img"));im.src=u})}
 
 const getUrl=()=>{try{return localStorage.getItem(LS_URL)||DATA_URL}catch(e){return DATA_URL}};
 // 在庫の数（stock）＝ 販売可能 ＋ 納品中。引当中は含めない（判定・表示ともこの数）
@@ -195,7 +226,7 @@ function render(){
   document.getElementById("list").innerHTML=shown.length?shown.map(x=>{
     const c=x.c,w=Math.min(100,x.stock/Math.max(c.y*2,1)*100),days=c.d>0?Math.floor(x.stock/c.d):null;
     return `<div class="item ${c.lv}" style="--c:${COLV[c.lv]}">
-    <div class="top"><div class="name">${x.name}</div><div class="qty"><b>${x.stock}</b><span>個</span></div></div>
+    <div class="top"><div class="nm">${!data.mock&&IMG[x.name]?`<img class="th" src="${IMG[x.name]}" alt="">`:""}<div class="name">${x.name}</div></div><div class="qty"><b>${x.stock}</b><span>個</span></div></div>
     <div class="bar"><i style="width:${w}%"></i></div>
     <div class="meta"><span>販売可能 <b>${x.sellable}</b></span><span>納品中 <b>${x.inbound}</b></span><span class="dim">引当中 <b>${x.reserved}</b></span></div>
     <div class="meta" style="margin-top:4px"><span>残り日数 <b>${days===null?"—":"約"+days+"日"}</b></span><span>警告 <b>${c.r}個以下</b></span><span>注意 <b>${c.y}個以下</b></span></div>
@@ -234,6 +265,7 @@ function drawS(){
   document.getElementById("slist").innerHTML=edit.items.map((x,i)=>{
     const c=calc(x.stock,x,C),max=Math.max(60,c.y*1.8,x.stock+10);
     return `<div class="sc"><div class="top"><div class="name">${x.name}</div><span class="badge" style="background:${COLV[c.lv]}">${x.stock}個 ${LAB[c.lv]}</span></div>
+    <div class="imgrow">${IMG[x.name]?`<img class="th" src="${IMG[x.name]}" alt="">`:`<div class="th ph">画像なし</div>`}<label class="pick">写真を選ぶ<input type="file" accept="image/*" data-img="${x.name}" hidden></label>${IMG[x.name]?`<button class="pick del" data-imgdel="${x.name}">消す</button>`:""}</div>
     <div class="seg"><button data-sel="0" data-i="${i}" class="${x.sel?"":"on"}">自社商品</button><button data-sel="1" data-i="${i}" class="${x.sel?"on":""}">セレクト品</button></div>
     ${x.sel?stp("p","vendor","業者→家の日数","日",1,i,x.vendor):stp("p","perday","1日に印刷できる数","個",1,i,x.perday)}${stp("p","m","月に売れる数","個",5,i,x.m)}
     <div class="res"><div><span><i class="dot" style="background:#e5484d"></i>警告</span><b>${c.r}個以下 <small>（${c.w}日ぶん）</small></b></div>
@@ -241,7 +273,24 @@ function drawS(){
     <div class="g"><span>印刷にかかる日数</span><span>${x.sel?"印刷なし":c.pd+"日"}</span></div></div>
     <div class="sbar"><i style="width:${c.r/max*100}%;background:#e5484d"></i><i style="width:${(c.y-c.r)/max*100}%;background:#e8a842"></i><i style="flex:1;background:#2fb457"></i><b class="m" style="left:calc(${Math.min(x.stock/max*100,99)}% - 1px)"></b></div></div>`}).join("");
 }
-document.getElementById("settings").onclick=e=>{
+document.getElementById("settings").addEventListener("change",async e=>{
+  const f=e.target.closest("input[data-img]");if(!f||!f.files[0])return;
+  const name=f.dataset.img;
+  if(!urlParts()){alert("先に「データの接続」にURLを入れて保存してください");return}
+  try{
+    const d=await shrink(f.files[0]);
+    await postImg({action:"img",name,data:d});
+    IMG[name]=d;localStorage.setItem(LS_IMG,JSON.stringify(IMG));
+  }catch(err){alert("画像を送れませんでした")}
+  drawS();
+});
+document.getElementById("settings").onclick=async e=>{
+  const dl=e.target.closest("button[data-imgdel]");
+  if(dl){
+    try{await postImg({action:"imgdel",name:dl.dataset.imgdel});delete IMG[dl.dataset.imgdel];localStorage.setItem(LS_IMG,JSON.stringify(IMG))}
+    catch(err){alert("画像を消せませんでした")}
+    drawS();return;
+  }
   const s=e.target.closest("button[data-sel]");
   if(s){edit.items[s.dataset.i].sel=s.dataset.sel==="1";drawS();return}
   const b=e.target.closest("button[data-d]");if(!b)return;
@@ -269,8 +318,8 @@ document.getElementById("save").onclick=async()=>{
 document.getElementById("gear").onclick=openSettings;
 document.getElementById("back").onclick=closeSettings;
 
-(async()=>{data=await load();render()})();
-document.addEventListener("visibilitychange",async()=>{if(!document.hidden&&document.getElementById("main").style.display!=="none"){data=await load();render()}});
+(async()=>{data=await load();render();if(!data.mock&&await loadImgs())render()})();
+document.addEventListener("visibilitychange",async()=>{if(!document.hidden&&document.getElementById("main").style.display!=="none"){data=await load();render();if(!data.mock&&await loadImgs())render()}});
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js");
 </script>
 </body>
