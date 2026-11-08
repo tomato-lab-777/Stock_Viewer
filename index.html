@@ -47,6 +47,8 @@ h2{font-size:13px;color:var(--sub);font-weight:600;margin:16px 0 8px}
 .res{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:13px}
 .res div{display:flex;justify-content:space-between;margin-top:4px}
 .res small{color:var(--sub);font-size:11px}.res .g{color:var(--sub);font-size:11px}
+input#url{width:100%;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:0 10px;font-size:13px}
+.meta .dim,.meta .dim b{color:var(--sub);font-weight:400}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
 .sbar{position:relative;display:flex;height:8px;border-radius:4px;margin-top:14px;background:var(--line)}
 .sbar i{display:block;height:100%}.sbar i:first-child{border-radius:4px 0 0 4px}.sbar i:last-child{border-radius:0 4px 4px 0}
@@ -67,7 +69,10 @@ h2{font-size:13px;color:var(--sub);font-weight:600;margin:16px 0 8px}
   <div class="sc" id="common"></div>
   <h2>商品ごと</h2>
   <div id="slist"></div>
+  <h2>データの接続</h2>
+  <div class="sc"><div style="font-size:12px;color:var(--sub);margin-bottom:6px">Apps ScriptのURL（?key=合言葉 つき）。この端末だけに保存されます</div><input id="url" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec?key=…"></div>
   <div class="formula">計算のしかた<br>
+  在庫の数 ＝ 販売可能 ＋ 納品中（引当中は含めない）<br><br>
   警告（赤）＝ 補充にかかる全日数ぶん<br>
   　自社商品：印刷 ＋ 梱包 ＋ 家→FBA<br>
   　セレクト品：業者→家 ＋ 梱包 ＋ 家→FBA<br>
@@ -83,8 +88,10 @@ h2{font-size:13px;color:var(--sub);font-weight:600;margin:16px 0 8px}
 
 <script>
 // ===== 設定 =====
-// Apps ScriptのURL。空なら仮データを表示し、設定はこの端末だけに保存
+// Apps ScriptのURLは合言葉つきのため、公開リポジトリには書かない。
+// 設定画面の「データの接続」に入力すると、この端末だけに保存される。空なら仮データを表示。
 const DATA_URL = "";
+const LS_URL="fba_url";
 
 // 初期値
 const DEF_COMMON = {pack:1, ship:3, margin:7};
@@ -98,14 +105,14 @@ const DEF_ITEM = {
 };
 const FALLBACK = {sel:false,perday:6,vendor:5,m:20};
 
-// 仮データ（stock=在庫、inbound=入庫中）
+// 仮データ（sellable=販売可能、inbound=納品中、reserved=引当中）
 const MOCK = [
- {name:"SMS-64-GR",stock:3,inbound:0},
- {name:"SMS-64-BK",stock:25,inbound:20},
- {name:"SMS-74-GR",stock:12,inbound:0},
- {name:"SMS-74-BK",stock:48,inbound:0},
- {name:"SHK",stock:30,inbound:0},
- {name:"BHC",stock:60,inbound:0}
+ {name:"SMS-64-GR",sellable:0,inbound:14,reserved:3},
+ {name:"SMS-64-BK",sellable:25,inbound:20,reserved:0},
+ {name:"SMS-74-GR",sellable:0,inbound:0,reserved:8},
+ {name:"SMS-74-BK",sellable:2,inbound:0,reserved:5},
+ {name:"SHK",sellable:26,inbound:0,reserved:10},
+ {name:"BHC",sellable:10,inbound:12,reserved:1}
 ];
 
 const LS="fba_cfg";
@@ -130,15 +137,27 @@ function calc(stock,ic,cm){
 
 let filter=null,data=null,cfg=null,edit=null;
 
+const getUrl=()=>{try{return localStorage.getItem(LS_URL)||DATA_URL}catch(e){return DATA_URL}};
+// 在庫の数（stock）＝ 販売可能 ＋ 納品中。引当中は含めない（判定・表示ともこの数）
+function norm(items){
+  const arr=Array.isArray(items)?items:Object.keys(items||{}).map(n=>({name:n,...items[n]}));
+  return arr.map(x=>{
+    const sellable=x.sellable??x.stock??0,inbound=x.inbound??0,reserved=x.reserved??0;
+    return {name:x.name,sellable,inbound,reserved,stock:sellable+inbound};
+  });
+}
+
 async function load(){
-  if(!DATA_URL) return {items:MOCK,mock:true,at:new Date()};
+  const url=getUrl();
+  if(!url) return {items:norm(MOCK),mock:true,at:new Date()};
   try{
-    const j=await (await fetch(DATA_URL,{cache:"no-store"})).json();
+    const j=await (await fetch(url,{cache:"no-store"})).json();
+    if(!j.ok) throw new Error((j.error&&j.error.message)||"error");
     localStorage.setItem("fba",JSON.stringify(j));
-    return {items:j.items,at:new Date(j.updated||Date.now())};
+    return {items:norm(j.items),at:new Date(j.updated||Date.now())};
   }catch(e){
     const c=localStorage.getItem("fba");
-    if(c){const j=JSON.parse(c);return {items:j.items,at:new Date(j.updated),stale:true}}
+    if(c){try{const j=JSON.parse(c);return {items:norm(j.items),at:new Date(j.updated),stale:true}}catch(_){}}
     return {items:[],at:new Date(),err:true};
   }
 }
@@ -157,8 +176,8 @@ function render(){
     return `<div class="item ${c.lv}" style="--c:${COLV[c.lv]}">
     <div class="top"><div class="name">${x.name}</div><div class="qty"><b>${x.stock}</b><span>個</span></div></div>
     <div class="bar"><i style="width:${w}%"></i></div>
-    <div class="meta"><span>状態 <b>${LAB[c.lv]}</b></span><span>入庫中 <b>${x.inbound??0}</b></span><span>残り日数 <b>${days===null?"—":"約"+days+"日"}</b></span></div>
-    <div class="meta" style="margin-top:4px"><span>警告 <b>${c.r}個以下</b></span><span>注意 <b>${c.y}個以下</b></span></div>
+    <div class="meta"><span>販売可能 <b>${x.sellable}</b></span><span>納品中 <b>${x.inbound}</b></span><span class="dim">引当中 <b>${x.reserved}</b></span></div>
+    <div class="meta" style="margin-top:4px"><span>残り日数 <b>${days===null?"—":"約"+days+"日"}</b></span><span>警告 <b>${c.r}個以下</b></span><span>注意 <b>${c.y}個以下</b></span></div>
     </div>`}).join(""):`<div class="empty">該当なし</div>`;
   const t=data.at,p=n=>String(n).padStart(2,"0");
   document.getElementById("upd").textContent=`${t.getMonth()+1}/${t.getDate()} ${p(t.getHours())}:${p(t.getMinutes())} 更新`;
@@ -172,6 +191,7 @@ function openSettings(){
   cfg=getCfg();
   edit={common:{...cfg.common},items:data.items.map(x=>({name:x.name,stock:x.stock,...itemCfg(cfg,x.name)}))};
   drawS();
+  document.getElementById("url").value=(()=>{try{return localStorage.getItem(LS_URL)||""}catch(e){return ""}})();
   document.getElementById("main").style.display="none";
   document.getElementById("settings").style.display="block";
   document.getElementById("ttl").textContent="しきい値の設定";
@@ -213,10 +233,13 @@ document.getElementById("reset").onclick=()=>{
   edit.items=edit.items.map(x=>({name:x.name,stock:x.stock,...(DEF_ITEM[x.name]||FALLBACK)}));
   drawS();
 };
-document.getElementById("save").onclick=()=>{
+document.getElementById("save").onclick=async()=>{
+  const u=document.getElementById("url").value.trim();
+  try{if(u)localStorage.setItem(LS_URL,u);else localStorage.removeItem(LS_URL)}catch(e){}
   const items={};edit.items.forEach(x=>items[x.name]={sel:x.sel,perday:x.perday,vendor:x.vendor,m:x.m});
   localStorage.setItem(LS,JSON.stringify({common:edit.common,items}));
   // Apps Script接続後：ここで計算したしきい値（r,y）を送り、ウィジェットにも反映する
+  data=await load();
   closeSettings();
 };
 document.getElementById("gear").onclick=openSettings;
