@@ -91,7 +91,7 @@ input#url{width:100%;height:40px;border-radius:10px;border:1px solid var(--line)
 // Apps ScriptのURLは合言葉つきのため、公開リポジトリには書かない。
 // 設定画面の「データの接続」に入力すると、この端末だけに保存される。空なら仮データを表示。
 const DATA_URL = "";
-const LS_URL="fba_url";
+const LS_URL="fba_url",LS_DIRTY="fba_dirty";
 
 // 初期値
 const DEF_COMMON = {pack:1, ship:3, margin:7};
@@ -147,6 +147,19 @@ function norm(items){
   });
 }
 
+// 設定をApps Scriptへ送る（警告・注意の個数も計算して一緒に送る）。成功したらtrue
+async function pushCfg(names){
+  const url=getUrl();if(!url)return false;
+  try{
+    const c=getCfg(),th={},items={};
+    names.forEach(n=>{const ic=itemCfg(c,n),k=calc(0,ic,c.common);th[n]={r:k.r,y:k.y};items[n]={sel:ic.sel,perday:ic.perday,vendor:ic.vendor,m:ic.m}});
+    const payload=JSON.stringify({common:c.common,items,th});
+    const j=await (await fetch(url+(url.includes("?")?"&":"?")+"save="+encodeURIComponent(payload),{cache:"no-store"})).json();
+    if(j&&j.saved){localStorage.removeItem(LS_DIRTY);return true}
+  }catch(e){}
+  return false;
+}
+
 async function load(){
   const url=getUrl();
   if(!url) return {items:norm(MOCK),mock:true,at:new Date()};
@@ -154,6 +167,14 @@ async function load(){
     const j=await (await fetch(url,{cache:"no-store"})).json();
     if(!j.ok) throw new Error((j.error&&j.error.message)||"error");
     localStorage.setItem("fba",JSON.stringify(j));
+    const names=Object.keys(j.items||{});
+    if(localStorage.getItem(LS_DIRTY)){
+      await pushCfg(names);                                   // 未送信の設定があれば再送
+    }else if(j.config&&j.config.common){
+      localStorage.setItem(LS,JSON.stringify({common:j.config.common,items:j.config.items||{}})); // 他の端末の設定を取り込む
+    }else if(localStorage.getItem(LS)){
+      await pushCfg(names);                                   // 初回：この端末の設定を送る
+    }
     return {items:norm(j.items),at:new Date(j.updated||Date.now())};
   }catch(e){
     const c=localStorage.getItem("fba");
@@ -181,7 +202,7 @@ function render(){
     </div>`}).join(""):`<div class="empty">該当なし</div>`;
   const t=data.at,p=n=>String(n).padStart(2,"0");
   document.getElementById("upd").textContent=`${t.getMonth()+1}/${t.getDate()} ${p(t.getHours())}:${p(t.getMinutes())} 更新`;
-  document.getElementById("note").textContent=data.mock?"仮データを表示中":data.stale?"通信できないため前回のデータを表示中":data.err?"データを取得できません":"";
+  document.getElementById("note").textContent=[data.mock?"仮データを表示中":data.stale?"通信できないため前回のデータを表示中":data.err?"データを取得できません":"",localStorage.getItem(LS_DIRTY)?"設定が未送信です（ウィジェットにまだ反映されていません）":""].filter(Boolean).join(" / ");
   document.querySelectorAll(".tile").forEach(e=>e.onclick=()=>{filter=filter===e.dataset.k?null:e.dataset.k;render()});
 }
 
@@ -238,7 +259,10 @@ document.getElementById("save").onclick=async()=>{
   try{if(u)localStorage.setItem(LS_URL,u);else localStorage.removeItem(LS_URL)}catch(e){}
   const items={};edit.items.forEach(x=>items[x.name]={sel:x.sel,perday:x.perday,vendor:x.vendor,m:x.m});
   localStorage.setItem(LS,JSON.stringify({common:edit.common,items}));
-  // Apps Script接続後：ここで計算したしきい値（r,y）を送り、ウィジェットにも反映する
+  if(getUrl()){
+    localStorage.setItem(LS_DIRTY,"1");
+    await pushCfg(edit.items.map(x=>x.name));   // 成功すると未送信の印が消える
+  }
   data=await load();
   closeSettings();
 };
