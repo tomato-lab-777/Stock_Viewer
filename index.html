@@ -40,6 +40,7 @@ h2{font-size:13px;color:var(--sub);font-weight:600;margin:16px 0 8px}
 .seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--bg);border-radius:10px;padding:3px;margin-bottom:4px}
 .seg button{height:34px;border:0;border-radius:8px;background:none;color:var(--sub);font-size:13px}
 .seg button.on{background:#2f6fed;color:#fff;font-weight:600}
+.hint{font-size:11px;color:var(--sub);margin:2px 0 6px}.hint.warn{color:#e8a842}
 .row{display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:13px}
 .step{display:flex;align-items:center;gap:8px}
 .step button{width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:#242d37;color:var(--text);font-size:17px}
@@ -114,6 +115,11 @@ const DEF_ITEM = {
 };
 const FALLBACK = {sel:false,perday:6,vendor:5,m:20};
 
+// 売上からの自動計算（直近3か月の平均）。SALES=商品別の月の販売数（整数）、SALESRAW=集計の中身
+let SALES={},SALESRAW={};
+function setSales(s){SALES={};SALESRAW=s||{};Object.keys(SALESRAW).forEach(n=>{const v=SALESRAW[n];if(v&&v.months>0)SALES[n]=Math.max(1,Math.round(v.avg))})}
+const effM=ic=>ic.auto&&SALES[ic.name]!=null?SALES[ic.name]:ic.m;   // 実際に計算に使う月の販売数
+
 // 仮データ（sellable=販売可能、inbound=納品中、reserved=引当中）
 const MOCK = [
  {name:"SMS-64-GR",sellable:0,inbound:14,reserved:3},
@@ -140,12 +146,12 @@ function getCfg(){
   let c={};try{c=JSON.parse(localStorage.getItem(LS))||{}}catch(e){}
   return {common:{...DEF_COMMON,...(c.common||{})},items:c.items||{}};
 }
-const itemCfg=(cfg,name)=>({...(DEF_ITEM[name]||FALLBACK),...(cfg.items[name]||{})});
+const itemCfg=(cfg,name)=>({auto:false,...(DEF_ITEM[name]||FALLBACK),...(cfg.items[name]||{}),name});
 
 // しきい値の計算
 function calc(stock,ic,cm){
-  const d=ic.m/30;
-  const pd=ic.sel?0:Math.ceil(ic.m/ic.perday);
+  const m=effM(ic),d=m/30;
+  const pd=ic.sel?0:Math.ceil(m/ic.perday);
   const w=(ic.sel?ic.vendor:pd)+cm.pack+cm.ship;   // 警告の日数
   const yd=w+cm.margin;                              // 注意の日数
   const r=Math.ceil(d*w), y=Math.ceil(d*yd);
@@ -186,6 +192,15 @@ function norm(items,production){
     return {name:x.name,sellable,inbound,reserved,stock:sellable+inbound,prod:(production||{})[x.name]||null};
   });
 }
+// 売れ行き（先月までの月ごとの販売数。古い月→新しい月の順）
+function trendRow(n){
+  const r=SALESRAW[n];if(!r||!r.series||!r.months)return "";
+  const s=r.series.slice().reverse(),v=s.filter(z=>z.count!==null);
+  if(!v.length)return "";
+  const a=v[0].count,b=v[v.length-1].count;
+  const ar=v.length<2?"":b>=a*1.15+1?"↗":b<=a*0.85-1?"↘":"→";
+  return `<div class="meta" style="margin-top:4px"><span>売れ行き</span>${s.map(z=>`<span>${z.label} <b>${z.count===null?"—":z.count}</b></span>`).join("")}<span>${ar}</span></div>`;
+}
 // 製造在庫の状態の色（正常=緑／要確認=橙／エラー=赤）
 const PCOL=s=>!s?"#8a97a5":s.startsWith("エラー")?"#e5484d":s==="正常"?"#2fb457":"#e8a842";
 const prodRow=p=>p?`<div class="prod"><span>製造在庫</span><span title="${p.beforeState||""}"><i class="dot" style="background:${PCOL(p.beforeState)}"></i>検品前 <b>${p.before}</b></span><span title="${p.afterState||""}"><i class="dot" style="background:${PCOL(p.afterState)}"></i>検品後 <b>${p.after}</b></span></div>`:"";
@@ -195,7 +210,7 @@ async function pushCfg(names){
   const url=getUrl();if(!url)return false;
   try{
     const c=getCfg(),th={},items={};
-    names.forEach(n=>{const ic=itemCfg(c,n),k=calc(0,ic,c.common);th[n]={r:k.r,y:k.y};items[n]={sel:ic.sel,perday:ic.perday,vendor:ic.vendor,m:ic.m}});
+    names.forEach(n=>{const ic=itemCfg(c,n),k=calc(0,ic,c.common);th[n]={r:k.r,y:k.y};items[n]={sel:ic.sel,perday:ic.perday,vendor:ic.vendor,m:ic.m,auto:!!ic.auto}});
     const payload=JSON.stringify({common:c.common,items,th});
     const j=await (await fetch(url+(url.includes("?")?"&":"?")+"save="+encodeURIComponent(payload),{cache:"no-store"})).json();
     if(j&&j.saved){localStorage.removeItem(LS_DIRTY);return true}
@@ -210,6 +225,7 @@ async function load(){
     const j=await (await fetch(url,{cache:"no-store"})).json();
     if(!j.ok) throw new Error((j.error&&j.error.message)||"error");
     localStorage.setItem("fba",JSON.stringify(j));
+    setSales(j.sales);
     const names=Object.keys(j.items||{});
     if(localStorage.getItem(LS_DIRTY)){
       await pushCfg(names);                                   // 未送信の設定があれば再送
@@ -218,10 +234,15 @@ async function load(){
     }else if(localStorage.getItem(LS)){
       await pushCfg(names);                                   // 初回：この端末の設定を送る
     }
-    return {items:norm(j.items,j.production),at:new Date(j.updated||Date.now()),prodErr:j.productionError||null};
+    if(!localStorage.getItem(LS_DIRTY)){                      // 自動計算の結果が変わっていたら、警告・注意の個数を送り直す
+      const c=getCfg();
+      const old=n=>(Array.isArray(j.items)?j.items.find(z=>z.name===n):(j.items||{})[n])||{};
+      if(names.some(n=>{const ic=itemCfg(c,n);if(!ic.auto)return false;const k=calc(0,ic,c.common),o=old(n);return o.r!==k.r||o.y!==k.y}))await pushCfg(names);
+    }
+    return {items:norm(j.items,j.production),at:new Date(j.updated||Date.now()),prodErr:j.productionError||null,salesErr:j.salesError||null};
   }catch(e){
     const c=localStorage.getItem("fba");
-    if(c){try{const j=JSON.parse(c);return {items:norm(j.items,j.production),at:new Date(j.updated),stale:true}}catch(_){}}
+    if(c){try{const j=JSON.parse(c);setSales(j.sales);return {items:norm(j.items,j.production),at:new Date(j.updated),stale:true}}catch(_){}}
     return {items:[],at:new Date(),err:true};
   }
 }
@@ -242,15 +263,22 @@ function render(){
     <div class="bar"><i style="width:${w}%"></i></div>
     <div class="meta"><span>販売可能 <b>${x.sellable}</b></span><span>納品中 <b>${x.inbound}</b></span><span class="dim">引当中 <b>${x.reserved}</b></span></div>
     <div class="meta" style="margin-top:4px"><span>残り日数 <b>${days===null?"—":"約"+days+"日"}</b></span><span>警告 <b>${c.r}個以下</b></span><span>注意 <b>${c.y}個以下</b></span></div>
-    ${prodRow(x.prod)}
+    ${trendRow(x.name)}${prodRow(x.prod)}
     </div>`}).join(""):`<div class="empty">該当なし</div>`;
   const t=data.at,p=n=>String(n).padStart(2,"0");
   document.getElementById("upd").textContent=`${t.getMonth()+1}/${t.getDate()} ${p(t.getHours())}:${p(t.getMinutes())} 更新`;
-  document.getElementById("note").textContent=[data.mock?"仮データを表示中":data.stale?"通信できないため前回のデータを表示中":data.err?"データを取得できません":"",data.prodErr?"製造在庫を読めません":"",localStorage.getItem(LS_DIRTY)?"設定が未送信です（ウィジェットにまだ反映されていません）":""].filter(Boolean).join(" / ");
+  document.getElementById("note").textContent=[data.mock?"仮データを表示中":data.stale?"通信できないため前回のデータを表示中":data.err?"データを取得できません":"",data.prodErr?"製造在庫を読めません":"",data.salesErr?"売上を読めません":"",localStorage.getItem(LS_DIRTY)?"設定が未送信です（ウィジェットにまだ反映されていません）":""].filter(Boolean).join(" / ");
   document.querySelectorAll(".tile").forEach(e=>e.onclick=()=>{filter=filter===e.dataset.k?null:e.dataset.k;render()});
 }
 
 // ===== 設定画面 =====
+const monthRow=(x,i)=>{
+  const raw=SALESRAW[x.name],has=SALES[x.name]!=null;
+  const seg=`<div class="seg"><button data-auto="0" data-i="${i}" class="${x.auto?"":"on"}">販売数は手入力</button><button data-auto="1" data-i="${i}" class="${x.auto?"on":""}">売上から自動</button></div>`;
+  if(!x.auto) return seg+stp("p","m","月に売れる数","個",1,i,x.m);
+  if(has) return seg+`<div class="row"><span>月に売れる数（自動）</span><b>${SALES[x.name]}個</b></div><div class="hint">直近${raw.months}か月で計${raw.total}個 → 先月重視の平均 ${raw.avg}個</div>`;
+  return seg+`<div class="hint warn">売上データを読めないため、手入力の値を使います</div>`+stp("p","m","月に売れる数","個",1,i,x.m);
+};
 const stp=(g,k,label,u,d,i,val)=>`<div class="row"><span>${label}</span><div class="step"><button data-g="${g}" data-k="${k}" data-i="${i}" data-d="${-d}">−</button><span>${val}${u}</span><button data-g="${g}" data-k="${k}" data-i="${i}" data-d="${d}">＋</button></div></div>`;
 function openSettings(){
   cfg=getCfg();
@@ -280,7 +308,7 @@ function drawS(){
     return `<div class="sc"><div class="top"><div class="name">${x.name}</div><span class="badge" style="background:${COLV[c.lv]}">${x.stock}個 ${LAB[c.lv]}</span></div>
     <div class="imgrow">${IMG[x.name]?`<img class="th" src="${IMG[x.name]}" alt="">`:`<div class="th ph">画像なし</div>`}<label class="pick">写真を選ぶ<input type="file" accept="image/*" data-img="${x.name}" hidden></label>${IMG[x.name]?`<button class="pick del" data-imgdel="${x.name}">消す</button>`:""}</div>
     <div class="seg"><button data-sel="0" data-i="${i}" class="${x.sel?"":"on"}">自社商品</button><button data-sel="1" data-i="${i}" class="${x.sel?"on":""}">セレクト品</button></div>
-    ${x.sel?stp("p","vendor","業者→家の日数","日",1,i,x.vendor):stp("p","perday","1日に印刷できる数","個",1,i,x.perday)}${stp("p","m","月に売れる数","個",5,i,x.m)}
+    ${x.sel?stp("p","vendor","業者→家の日数","日",1,i,x.vendor):stp("p","perday","1日に印刷できる数","個",1,i,x.perday)}${monthRow(x,i)}
     <div class="res"><div><span><i class="dot" style="background:#e5484d"></i>警告</span><b>${c.r}個以下 <small>（${c.w}日ぶん）</small></b></div>
     <div><span><i class="dot" style="background:#e8a842"></i>注意</span><b>${c.y}個以下 <small>（${c.yd}日ぶん）</small></b></div>
     <div class="g"><span>印刷にかかる日数</span><span>${x.sel?"印刷なし":c.pd+"日"}</span></div></div>
@@ -304,11 +332,13 @@ document.getElementById("settings").onclick=async e=>{
     catch(err){alert("画像を消せませんでした")}
     drawS();return;
   }
+  const au=e.target.closest("button[data-auto]");
+  if(au){edit.items[au.dataset.i].auto=au.dataset.auto==="1";drawS();return}
   const s=e.target.closest("button[data-sel]");
   if(s){edit.items[s.dataset.i].sel=s.dataset.sel==="1";drawS();return}
   const b=e.target.closest("button[data-d]");if(!b)return;
   const t=b.dataset.g==="c"?edit.common:edit.items[b.dataset.i],k=b.dataset.k;
-  const min=k==="m"?5:k==="perday"?1:0;
+  const min=k==="m"?1:k==="perday"?1:0;
   t[k]=Math.max(min,Math.min(999,t[k]+ +b.dataset.d));drawS();
 };
 document.getElementById("reset").onclick=()=>{
@@ -319,7 +349,7 @@ document.getElementById("reset").onclick=()=>{
 document.getElementById("save").onclick=async()=>{
   const u=document.getElementById("url").value.trim();
   try{if(u)localStorage.setItem(LS_URL,u);else localStorage.removeItem(LS_URL)}catch(e){}
-  const items={};edit.items.forEach(x=>items[x.name]={sel:x.sel,perday:x.perday,vendor:x.vendor,m:x.m});
+  const items={};edit.items.forEach(x=>items[x.name]={sel:x.sel,perday:x.perday,vendor:x.vendor,m:x.m,auto:!!x.auto});
   localStorage.setItem(LS,JSON.stringify({common:edit.common,items}));
   if(getUrl()){
     localStorage.setItem(LS_DIRTY,"1");
